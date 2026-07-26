@@ -37,7 +37,7 @@ CONF_TEXT_VERBOSITY = "text_verbosity"
 CONF_API_KEY = "api_key"
 
 # Defaults
-DEFAULT_MODEL = "opencode-go/kimi-k3"
+DEFAULT_MODEL = "opencode-go/deepseek-v4-flash"
 RECOMMENDED_REASONING_EFFORT = "medium"
 RECOMMENDED_REASONING_SUMMARY = "off"
 RECOMMENDED_TEXT_VERBOSITY = "medium"
