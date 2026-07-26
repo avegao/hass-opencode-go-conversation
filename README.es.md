@@ -11,6 +11,7 @@ Una integración personalizada de [Home Assistant](https://www.home-assistant.io
 - Conversaciones multi-turno con historial
 - Selector de modelo basado en los modelos de OpenCode Go
 - Estructura compatible con HACS
+- Puedes volver a introducir la clave de API desde **Reconfigurar** sin reinstalar la integración.
 
 ## Requisitos
 

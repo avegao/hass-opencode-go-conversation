@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from homeassistant.config_entries import SOURCE_RECONFIGURE
 
 from custom_components.opencode_go_conversation.config_flow import (
     OpenCodeGoConversationConfigFlow,
@@ -44,6 +45,28 @@ async def test_user_step_shows_error_on_invalid_api_key(hass):
 
     assert result["type"] == "form"
     assert result["errors"]["base"] == "invalid_auth"
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_step_updates_api_key(hass, mock_config_entry):
+    mock_config_entry.add_to_hass(hass)
+
+    flow = OpenCodeGoConversationConfigFlow()
+    flow.hass = hass
+    flow.context = {
+        "source": SOURCE_RECONFIGURE,
+        "entry_id": mock_config_entry.entry_id,
+    }
+
+    with patch(
+        "custom_components.opencode_go_conversation.config_flow._async_validate_api_key",
+        new=AsyncMock(),
+    ):
+        result = await flow.async_step_reconfigure({"api_key": "new_api_key"})
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+    assert mock_config_entry.data["api_key"] == "new_api_key"
 
 
 @pytest.mark.asyncio

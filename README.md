@@ -40,6 +40,8 @@ A [Home Assistant](https://www.home-assistant.io/) custom integration that bring
 2. Search for **OpenCode Go Conversation**.
 3. Paste your OpenCode Go API key.
 
+If you need to change the key later, open the integration menu and use **Reconfigure**.
+
 ## Notes
 
 - This integration uses the OpenCode Go responses endpoint with API-key auth.

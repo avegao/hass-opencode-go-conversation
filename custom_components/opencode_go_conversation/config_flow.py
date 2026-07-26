@@ -77,6 +77,16 @@ class OpenCodeGoConversationConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    def _async_api_key_form(
+        self, *, step_id: str, errors: dict[str, str] | None = None
+    ) -> ConfigFlowResult:
+        """Show the API key form for create, reconfigure, or reauth flows."""
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=vol.Schema({vol.Required(CONF_API_KEY): str}),
+            errors=errors,
+        )
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -117,11 +127,33 @@ class OpenCodeGoConversationConfigFlow(ConfigFlow, domain=DOMAIN):
                     ],
                 )
 
-        return self.async_show_form(
-            step_id="user",
-            data_schema=vol.Schema({vol.Required(CONF_API_KEY): str}),
-            errors=errors,
-        )
+        return self._async_api_key_form(step_id="user", errors=errors)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Allow updating the stored API key without reinstalling."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            api_key = user_input[CONF_API_KEY].strip()
+            try:
+                await _async_validate_api_key(self.hass, api_key)
+            except (
+                OpenCodeGoApiError,
+                OpenCodeGoRateLimited,
+                OpenCodeGoServerOverloaded,
+            ):
+                errors["base"] = "invalid_auth"
+            except Exception:
+                _LOGGER.exception("Failed to validate OpenCode Go API key")
+                errors["base"] = "cannot_connect"
+            else:
+                return self.async_update_and_abort(
+                    self._get_reconfigure_entry(),
+                    data_updates={CONF_API_KEY: api_key},
+                )
+
+        return self._async_api_key_form(step_id="reconfigure", errors=errors)
 
     @classmethod
     @callback

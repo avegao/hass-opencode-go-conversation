@@ -7,6 +7,13 @@
         "data": {
           "api_key": "Clave de API"
         }
+      },
+      "reconfigure": {
+        "title": "OpenCode Go — clave de API",
+        "description": "Introduce tu clave de API de OpenCode Go.",
+        "data": {
+          "api_key": "Clave de API"
+        }
       }
     },
     "error": {
