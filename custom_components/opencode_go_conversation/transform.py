@@ -135,6 +135,57 @@ def build_input_items(chat_log: ChatLog) -> list[dict[str, Any]]:
     return items
 
 
+def build_chat_messages(
+    chat_log: ChatLog, *, system_prompt: str = ""
+) -> list[dict[str, Any]]:
+    """Build OpenAI chat-completions messages from a chat log."""
+    messages: list[dict[str, Any]] = []
+
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+
+    for content in chat_log.content:
+        if isinstance(content, SystemContent):
+            continue
+
+        if isinstance(content, UserContent):
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": content.content}],
+                }
+            )
+            continue
+
+        if isinstance(content, AssistantContent):
+            message: dict[str, Any] = {"role": "assistant", "content": content.content}
+            if content.tool_calls:
+                message["tool_calls"] = [
+                    {
+                        "id": tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.tool_name,
+                            "arguments": json.dumps(tool_call.tool_args, default=json_default),
+                        },
+                    }
+                    for tool_call in content.tool_calls
+                ]
+            messages.append(message)
+            continue
+
+        if isinstance(content, ToolResultContent):
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": content.tool_call_id,
+                    "content": json.dumps(content.tool_result, default=json_default),
+                }
+            )
+
+    return messages
+
+
 async def async_prepare_files_for_prompt(
     hass: HomeAssistant, files: list[tuple[Path, str | None]]
 ) -> list[dict[str, Any]]:

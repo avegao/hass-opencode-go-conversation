@@ -54,7 +54,7 @@ from .opencode_api import (
 )
 from .transform import (
     async_prepare_files_for_prompt,
-    build_input_items,
+    build_chat_messages,
     extract_instructions,
     format_tool,
 )
@@ -208,29 +208,28 @@ async def async_run_chat_log(
         )
 
     for _iteration in range(max_iterations):
-        input_items = build_input_items(chat_log)
+        messages = build_chat_messages(chat_log, system_prompt=instructions)
         last_content = chat_log.content[-1]
         if isinstance(last_content, UserContent) and last_content.attachments:
             files = await async_prepare_files_for_prompt(
                 chat_log.hass,
                 [(a.path, a.mime_type) for a in last_content.attachments],
             )
-            last_message = input_items[-1]
-            if (
-                last_message.get("type") == "message"
-                and last_message.get("role") == "user"
-                and isinstance(last_message.get("content"), list)
-            ):
-                last_message["content"].extend(files)
+            for message in reversed(messages):
+                if message.get("role") != "user":
+                    continue
+                content = message.get("content")
+                if isinstance(content, str):
+                    message["content"] = [{"type": "text", "text": content}, *files]
+                elif isinstance(content, list):
+                    content.extend(files)
+                break
 
         request = OpenCodeGoRequest(
             model=model,
-            input=input_items,
-            instructions=instructions,
+            messages=messages,
             tools=tools,
             reasoning_effort=reasoning_effort,
-            reasoning_summary=reasoning_summary,
-            text_verbosity=text_verbosity,
         )
 
         try:

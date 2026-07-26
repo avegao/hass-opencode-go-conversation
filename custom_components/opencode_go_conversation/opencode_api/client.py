@@ -17,6 +17,7 @@ from .requests import OpenCodeGoRequest
 from .sse import sse_iter
 
 RESPONSES_PATH = "/responses"
+CHAT_COMPLETIONS_PATH = "/chat/completions"
 MODELS_PATH = "/models"
 
 _STREAM_HEADERS = {
@@ -62,7 +63,7 @@ class OpenCodeGoClient:
         """Submit *request* and stream back typed ``ResponseEvent`` objects."""
         resp = await self._auth.request(
             "post",
-            RESPONSES_PATH,
+            CHAT_COMPLETIONS_PATH,
             headers=_STREAM_HEADERS,
             json=request.to_body(),
         )

@@ -24,6 +24,7 @@ from custom_components.opencode_go_conversation.opencode_api import (
     OutputTextDelta,
 )
 from custom_components.opencode_go_conversation.transform import (
+    build_chat_messages,
     build_input_items,
     extract_instructions,
     json_default,
@@ -76,10 +77,49 @@ async def test_build_input_items_tool_result():
 
 
 @pytest.mark.asyncio
+async def test_build_chat_messages_preserves_text_and_tool_calls():
+    tool_call = type(
+        "ToolCall",
+        (),
+        {
+            "id": "call_1",
+            "tool_name": "turn_on",
+            "tool_args": {"entity_id": "light.kitchen"},
+        },
+    )()
+    chat_log = make_chat_log(
+        [
+            SystemContent(content="You are helpful."),
+            UserContent(content="Hello"),
+            AssistantContent(
+                agent_id="conversation.opencode_go_conversation",
+                content="Turning on the light.",
+                tool_calls=[tool_call],
+            ),
+            ToolResultContent(
+                agent_id="conversation.opencode_go_conversation",
+                tool_call_id="call_1",
+                tool_name="turn_on",
+                tool_result={"success": True},
+            ),
+        ]
+    )
+
+    messages = build_chat_messages(chat_log, system_prompt="You are helpful.")
+
+    assert messages[0] == {"role": "system", "content": "You are helpful."}
+    assert messages[1]["role"] == "user"
+    assert messages[2]["role"] == "assistant"
+    assert messages[2]["tool_calls"][0]["function"]["name"] == "turn_on"
+    assert messages[3]["role"] == "tool"
+    assert json.loads(messages[3]["content"]) == {"success": True}
+
+
+@pytest.mark.asyncio
 async def test_events_to_deltas_emits_text_and_tool_calls():
     request = OpenCodeGoRequest(
         model="opencode-go/kimi-k3",
-        input=[],
+        messages=[],
     )
 
     class FakeClient:
