@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Home Assistant",
+      "type": "shell",
+      "command": "bash script/develop",
+      "problemMatcher": []
+    },
+    {
+      "label": "Bootstrap",
+      "type": "shell",
+      "command": "bash script/setup/bootstrap",
+      "problemMatcher": []
+    },
+    {
+      "label": "Lint",
+      "type": "shell",
+      "command": "bash script/lint-check",
+      "problemMatcher": []
+    },
+    {
+      "label": "Test",
+      "type": "shell",
+      "command": "bash script/test",
+      "problemMatcher": []
+    }
+  ]
+}

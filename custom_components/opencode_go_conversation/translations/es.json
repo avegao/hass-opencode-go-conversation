@@ -1,0 +1,116 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "OpenCode Go — clave de API",
+        "description": "Introduce tu clave de API de OpenCode Go.",
+        "data": {
+          "api_key": "Clave de API"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "La clave de API no es válida.",
+      "cannot_connect": "No se pudo conectar con OpenCode Go. Inténtalo de nuevo."
+    },
+    "abort": {
+      "already_configured": "OpenCode Go ya está configurado."
+    }
+  },
+  "config_subentries": {
+    "conversation": {
+      "abort": {
+        "entry_not_loaded": "No se pueden añadir ajustes de conversación mientras la configuración está deshabilitada.",
+        "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+      },
+      "entry_type": "Agente de conversación",
+      "initiate_flow": {
+        "reconfigure": "Reconfigurar agente de conversación",
+        "user": "Añadir agente de conversación"
+      },
+      "step": {
+        "init": {
+          "data": {
+            "llm_hass_api": "Controlar Home Assistant",
+            "prompt": "[%key:common::config_flow::data::prompt%]",
+            "recommended": "Ajustes de modelo recomendados"
+          },
+          "data_description": {
+            "prompt": "Indica cómo debe responder el modelo. Puede ser una plantilla.",
+            "llm_hass_api": "Selecciona la API de Home Assistant que se expondrá al modelo."
+          }
+        },
+        "advanced": {
+          "title": "Ajustes avanzados",
+          "data": {
+            "model": "Modelo",
+            "reasoning_effort": "Esfuerzo de razonamiento",
+            "reasoning_summary": "Resumen de razonamiento",
+            "text_verbosity": "Verbosity del texto"
+          },
+          "data_description": {
+            "reasoning_effort": "Cuántos tokens de razonamiento debe generar el modelo antes de responder.",
+            "reasoning_summary": "Controla la longitud y el detalle del resumen de razonamiento.",
+            "text_verbosity": "Controla la verbosidad del texto del modelo."
+          }
+        }
+      }
+    },
+    "ai_task_data": {
+      "abort": {
+        "entry_not_loaded": "[%key:component::opencode_go_conversation::config_subentries::conversation::abort::entry_not_loaded%]",
+        "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+      },
+      "entry_type": "Tarea de IA",
+      "initiate_flow": {
+        "reconfigure": "Reconfigurar tarea de IA",
+        "user": "Añadir tarea de IA"
+      },
+      "step": {
+        "init": {
+          "data": {
+            "recommended": "Ajustes de modelo recomendados"
+          }
+        },
+        "advanced": {
+          "title": "Ajustes avanzados",
+          "data": {
+            "model": "Modelo",
+            "reasoning_effort": "Esfuerzo de razonamiento",
+            "reasoning_summary": "Resumen de razonamiento",
+            "text_verbosity": "Verbosity del texto"
+          },
+          "data_description": {
+            "reasoning_effort": "Cuántos tokens de razonamiento debe generar el modelo antes de responder.",
+            "reasoning_summary": "Controla la longitud y el detalle del resumen de razonamiento.",
+            "text_verbosity": "Controla la verbosidad del texto del modelo."
+          }
+        }
+      }
+    }
+  },
+  "selector": {
+    "reasoning_effort": {
+      "options": {
+        "low": "Bajo",
+        "medium": "Medio",
+        "high": "Alto"
+      }
+    },
+    "reasoning_summary": {
+      "options": {
+        "auto": "Automático",
+        "short": "Corto",
+        "detailed": "Detallado",
+        "off": "Desactivado"
+      }
+    },
+    "text_verbosity": {
+      "options": {
+        "low": "Baja",
+        "medium": "Media",
+        "high": "Alta"
+      }
+    }
+  }
+}

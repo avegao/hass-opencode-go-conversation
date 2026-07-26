@@ -1,0 +1,307 @@
+"""Conversation platform — OpenCode Go agent."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncGenerator
+import json
+import logging
+from typing import Any, Literal
+
+from homeassistant.components import conversation
+from homeassistant.components.conversation import (
+    AssistantContentDeltaDict,
+    ChatLog,
+    ConversationEntity,
+    ConversationInput,
+    ConversationResult,
+    ConverseError,
+    UserContent,
+)
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
+from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr, intent, llm
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+from .const import (
+    CONF_MODEL,
+    CONF_PROMPT,
+    CONF_REASONING_EFFORT,
+    CONF_REASONING_SUMMARY,
+    CONF_TEXT_VERBOSITY,
+    DEFAULT_MODEL,
+    DOMAIN,
+    RECOMMENDED_REASONING_EFFORT,
+    RECOMMENDED_REASONING_SUMMARY,
+    RECOMMENDED_TEXT_VERBOSITY,
+)
+from .opencode_api import (
+    FunctionCallAdded,
+    FunctionCallArgumentsDone,
+    OpenCodeGoApiError,
+    OpenCodeGoAuth,
+    OpenCodeGoClient,
+    OpenCodeGoContextWindowExceeded,
+    OpenCodeGoQuotaExceeded,
+    OpenCodeGoRateLimited,
+    OpenCodeGoRequest,
+    OpenCodeGoServerOverloaded,
+    OutputItemDone,
+    OutputTextDelta,
+    ReasoningSummaryDelta,
+)
+from .transform import (
+    async_prepare_files_for_prompt,
+    build_input_items,
+    extract_instructions,
+    format_tool,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+MAX_TOOL_ITERATIONS = 10
+NO_EXPOSED_ENTITIES_SUFFIX = (
+    "If the user asks a general knowledge question or makes casual conversation, "
+    "answer normally in plain text and do not mention missing tools, entities, or "
+    "integration limitations. Only mention exposing entities in Home Assistant when "
+    "the user is explicitly trying to control or inspect their home devices."
+)
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    api_key = hass.data[DOMAIN][entry.entry_id]["api_key"]
+
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != "conversation":
+            continue
+        async_add_entities(
+            [OpenCodeGoConversationEntity(hass, entry, api_key, subentry)],
+            config_subentry_id=subentry.subentry_id,
+        )
+
+
+class OpenCodeGoConversationEntity(
+    ConversationEntity, conversation.AbstractConversationAgent
+):
+    """Conversation agent backed by OpenCode Go."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Assist"
+    _attr_supports_streaming = True
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        api_key: str,
+        subentry: ConfigSubentry,
+    ) -> None:
+        self.hass = hass
+        self._entry = entry
+        self._subentry = subentry
+        self._api_key = api_key
+        self._attr_unique_id = subentry.subentry_id
+        self._attr_name = subentry.title
+        self._attr_device_info = dr.DeviceInfo(
+            identifiers={(DOMAIN, subentry.subentry_id)},
+            name=subentry.title,
+            manufacturer="OpenCode",
+            model=self._options.get(CONF_MODEL, DEFAULT_MODEL),
+            entry_type=dr.DeviceEntryType.SERVICE,
+        )
+
+        if self._options.get(CONF_LLM_HASS_API):
+            self._attr_supported_features = (
+                conversation.ConversationEntityFeature.CONTROL
+            )
+
+    @property
+    def _options(self) -> Any:
+        return self._subentry.data
+
+    @property
+    def supported_languages(self) -> list[str] | Literal["*"]:
+        return MATCH_ALL
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        conversation.async_set_agent(self.hass, self._entry, self)
+
+    async def async_will_remove_from_hass(self) -> None:
+        conversation.async_unset_agent(self.hass, self._entry)
+        await super().async_will_remove_from_hass()
+
+    async def _async_handle_message(
+        self,
+        user_input: ConversationInput,
+        chat_log: ChatLog,
+    ) -> ConversationResult:
+        try:
+            await chat_log.async_provide_llm_data(
+                user_input.as_llm_context(DOMAIN),
+                self._options.get(CONF_LLM_HASS_API),
+                self._options.get(CONF_PROMPT),
+                user_input.extra_system_prompt,
+            )
+        except ConverseError as err:
+            return err.as_conversation_result()
+
+        client = OpenCodeGoClient(
+            OpenCodeGoAuth(async_get_clientsession(self.hass), self._api_key)
+        )
+        await async_run_chat_log(
+            chat_log=chat_log,
+            client=client,
+            model=self._options.get(CONF_MODEL, DEFAULT_MODEL),
+            entity_id=self.entity_id,
+            reasoning_effort=self._options.get(
+                CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT
+            ),
+            reasoning_summary=self._options.get(
+                CONF_REASONING_SUMMARY, RECOMMENDED_REASONING_SUMMARY
+            ),
+            text_verbosity=self._options.get(
+                CONF_TEXT_VERBOSITY, RECOMMENDED_TEXT_VERBOSITY
+            ),
+            error_cls=ConverseError,
+        )
+
+        return conversation.async_get_result_from_chat_log(user_input, chat_log)
+
+
+async def async_run_chat_log(
+    *,
+    chat_log: ChatLog,
+    client: OpenCodeGoClient,
+    model: str,
+    entity_id: str,
+    reasoning_effort: str,
+    reasoning_summary: str,
+    text_verbosity: str,
+    max_iterations: int = MAX_TOOL_ITERATIONS,
+    instructions_suffix: str = "",
+    error_cls: type[Exception] = HomeAssistantError,
+) -> None:
+    """Execute a ChatLog against the OpenCode Go Responses API."""
+    tools = [format_tool(t) for t in chat_log.llm_api.tools] if chat_log.llm_api else []
+    instructions = extract_instructions(chat_log)
+    if (
+        chat_log.llm_api is not None
+        and chat_log.llm_api.api_prompt == llm.NO_ENTITIES_PROMPT
+    ):
+        instructions = (
+            f"{instructions}\n\n{NO_EXPOSED_ENTITIES_SUFFIX}"
+            if instructions
+            else NO_EXPOSED_ENTITIES_SUFFIX
+        )
+    if instructions_suffix:
+        instructions = (
+            f"{instructions}\n\n{instructions_suffix}"
+            if instructions
+            else instructions_suffix
+        )
+
+    for _iteration in range(max_iterations):
+        input_items = build_input_items(chat_log)
+        last_content = chat_log.content[-1]
+        if isinstance(last_content, UserContent) and last_content.attachments:
+            files = await async_prepare_files_for_prompt(
+                chat_log.hass,
+                [(a.path, a.mime_type) for a in last_content.attachments],
+            )
+            last_message = input_items[-1]
+            if (
+                last_message.get("type") == "message"
+                and last_message.get("role") == "user"
+                and isinstance(last_message.get("content"), list)
+            ):
+                last_message["content"].extend(files)
+
+        request = OpenCodeGoRequest(
+            model=model,
+            input=input_items,
+            instructions=instructions,
+            tools=tools,
+            reasoning_effort=reasoning_effort,
+            reasoning_summary=reasoning_summary,
+            text_verbosity=text_verbosity,
+        )
+
+        try:
+            async for _ in chat_log.async_add_delta_content_stream(
+                entity_id,
+                _events_to_deltas(client, request),
+            ):
+                pass
+        except (
+            OpenCodeGoApiError,
+            OpenCodeGoContextWindowExceeded,
+            OpenCodeGoQuotaExceeded,
+            OpenCodeGoRateLimited,
+            OpenCodeGoServerOverloaded,
+        ) as err:
+            _LOGGER.error("OpenCodeGo error: %s", err)
+            if error_cls is ConverseError:
+                raise ConverseError(
+                    str(err),
+                    chat_log.conversation_id or "",
+                    intent.IntentResponse(language="en"),
+                ) from err
+            raise error_cls(str(err)) from err
+
+        if not chat_log.unresponded_tool_results:
+            break
+
+
+async def _events_to_deltas(
+    client: OpenCodeGoClient,
+    request: OpenCodeGoRequest,
+) -> AsyncGenerator[AssistantContentDeltaDict, None]:
+    """Convert OpenCode Go ResponseEvents to HA delta dictionaries."""
+    started = False
+    pending_calls: dict[str, tuple[str, str]] = {}
+
+    async for event in client.stream(request):
+        if isinstance(event, OutputTextDelta) and event.delta:
+            if not started:
+                yield {"role": "assistant"}
+                started = True
+            yield {"content": event.delta}
+
+        elif isinstance(event, FunctionCallAdded):
+            pending_calls[event.item_id] = (event.call_id, event.name)
+            if not started:
+                yield {"role": "assistant"}
+                started = True
+
+        elif isinstance(event, FunctionCallArgumentsDone):
+            call_id, name = pending_calls.get(event.item_id, ("", ""))
+            try:
+                tool_args = json.loads(event.arguments or "{}")
+            except json.JSONDecodeError:
+                tool_args = {}
+            yield {
+                "tool_calls": [
+                    llm.ToolInput(
+                        id=call_id,
+                        tool_name=name,
+                        tool_args=tool_args,
+                    )
+                ]
+            }
+
+        elif isinstance(event, OutputItemDone):
+            if event.item.get("type") == "reasoning":
+                if not started:
+                    yield {"role": "assistant"}
+                    started = True
+                yield {"native": event.item}
+
+        elif isinstance(event, ReasoningSummaryDelta):
+            _LOGGER.debug("OpenCodeGo reasoning summary: %.80s", event.delta)

@@ -1,0 +1,17 @@
+{
+  "domain": "opencode_go_conversation",
+  "name": "OpenCode Go Conversation",
+  "codeowners": [
+    "@avegao"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "ai_task",
+    "conversation"
+  ],
+  "documentation": "https://github.com/avegao/hass-opencode-go-conversation",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/avegao/hass-opencode-go-conversation/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

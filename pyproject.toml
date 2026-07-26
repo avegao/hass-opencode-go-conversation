@@ -1,0 +1,61 @@
+[project]
+name = "hass-opencode-go-conversation"
+version = "0.1.0"
+description = "Home Assistant custom integration for OpenCode Go"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.14.2"
+dependencies = [
+    "voluptuous-openapi==0.2.0",
+]
+
+[dependency-groups]
+dev = [
+    { include-group = "test" },
+    "homeassistant==2026.3.4",
+    "hassil>=3.5.0",
+    "home-assistant-intents>=2026.3.3",
+    "aiodiscover>=1.6.0",
+    "pre-commit",
+    "ruff>=0.9.0",
+    "ty>=0.0.1a19",
+]
+test = [
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "pytest-homeassistant-custom-component==0.13.320",
+    "pytest-asyncio",
+    "async-timeout",
+]
+
+# ── Ruff (replaces flake8 + isort) ────────────────────────────────────────────
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["custom_components.opencode_go_conversation"]
+combine-as-imports = true
+
+# ── Pytest ─────────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+addopts = "-qq --cov=custom_components.opencode_go_conversation"
+console_output_style = "count"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+# ── Coverage ───────────────────────────────────────────────────────────────────
+
+[tool.coverage.run]
+branch = false
+
+[tool.coverage.report]
+show_missing = true
