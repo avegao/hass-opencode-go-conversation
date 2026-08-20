@@ -191,9 +191,11 @@ async def async_run_chat_log(
     """Execute a ChatLog against the OpenCode Go Responses API."""
     tools = [format_tool(t) for t in chat_log.llm_api.tools] if chat_log.llm_api else []
     instructions = extract_instructions(chat_log)
+    _no_entities_prompt = getattr(llm, "NO_ENTITIES_PROMPT", None)
     if (
         chat_log.llm_api is not None
-        and chat_log.llm_api.api_prompt == llm.NO_ENTITIES_PROMPT
+        and _no_entities_prompt is not None
+        and chat_log.llm_api.api_prompt == _no_entities_prompt
     ):
         instructions = (
             f"{instructions}\n\n{NO_EXPOSED_ENTITIES_SUFFIX}"

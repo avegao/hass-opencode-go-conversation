@@ -34,10 +34,12 @@ def format_tool(tool: llm.Tool) -> dict[str, Any]:
     """Format an HA LLM tool as a Responses API function definition."""
     return {
         "type": "function",
-        "name": tool.name,
-        "description": tool.description or "",
-        "parameters": convert(tool.parameters),
-        "strict": False,
+        "function": {
+            "name": tool.name,
+            "description": tool.description or "",
+            "parameters": convert(tool.parameters),
+            "strict": False,
+        },
     }
 
 
