@@ -18,7 +18,7 @@ class OpenCodeGoRequest:
     def to_body(self) -> dict[str, Any]:
         """Serialise to the JSON body expected by the OpenCode Go endpoint."""
         body: dict[str, Any] = {
-            "model": self.model,
+            "model": self.model.removeprefix("opencode-go/"),
             "stream": True,
             "messages": self.messages,
         }
