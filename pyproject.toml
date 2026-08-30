@@ -18,7 +18,7 @@ dev = [
     "aiodiscover>=3.3.2",
     "pre-commit==4.6.1",
     "ruff==0.16.0",
-    "ty==0.0.63",
+    "ty==0.0.74",
 ]
 test = [
     "pytest==9.0.3",
