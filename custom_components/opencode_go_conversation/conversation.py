@@ -44,6 +44,7 @@ from .opencode_api import (
     OpenCodeGoAuth,
     OpenCodeGoClient,
     OpenCodeGoContextWindowExceeded,
+    OpenCodeGoError,
     OpenCodeGoQuotaExceeded,
     OpenCodeGoRateLimited,
     OpenCodeGoRequest,
@@ -55,6 +56,7 @@ from .opencode_api import (
 from .transform import (
     async_prepare_files_for_prompt,
     build_chat_messages,
+    build_input_items,
     extract_instructions,
     format_tool,
 )
@@ -188,7 +190,7 @@ async def async_run_chat_log(
     instructions_suffix: str = "",
     error_cls: type[Exception] = HomeAssistantError,
 ) -> None:
-    """Execute a ChatLog against the OpenCode Go Responses API."""
+    """Execute a ChatLog against the model's OpenCode Go API protocol."""
     llm_api = chat_log.llm_api
     custom_serializer = (
         getattr(llm_api, "custom_serializer", None) if llm_api is not None else None
@@ -236,6 +238,7 @@ async def async_run_chat_log(
     # generating an unbounded burst of OpenCode Go traffic.
     for _iteration in range(min(max_iterations, MAX_TOOL_ITERATIONS)):
         messages = build_chat_messages(chat_log, system_prompt=instructions)
+        input_items = build_input_items(chat_log)
         last_content = chat_log.content[-1]
         if isinstance(last_content, UserContent) and last_content.attachments:
             files = await async_prepare_files_for_prompt(
@@ -251,6 +254,13 @@ async def async_run_chat_log(
                 elif isinstance(content, list):
                     content.extend(files)
                 break
+            for item in reversed(input_items):
+                if item.get("type") != "message" or item.get("role") != "user":
+                    continue
+                content = item.get("content")
+                if isinstance(content, list):
+                    content.extend(files)
+                break
 
         request = OpenCodeGoRequest(
             model=model,
@@ -258,6 +268,8 @@ async def async_run_chat_log(
             tools=tools,
             reasoning_effort=reasoning_effort,
             session_id=session_id,
+            input_items=input_items,
+            instructions=instructions,
         )
 
         try:
@@ -272,6 +284,7 @@ async def async_run_chat_log(
             OpenCodeGoQuotaExceeded,
             OpenCodeGoRateLimited,
             OpenCodeGoServerOverloaded,
+            OpenCodeGoError,
         ) as err:
             _LOGGER.error("OpenCodeGo error: %s", err)
             if error_cls is ConverseError:

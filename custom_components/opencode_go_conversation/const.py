@@ -3,29 +3,13 @@
 from homeassistant.const import CONF_LLM_HASS_API  # noqa: F401
 from homeassistant.helpers import llm
 
+from .opencode_api.routing import MODEL_PREFIX, supported_model_ids
+
 DOMAIN = "opencode_go_conversation"
 
-MODEL_IDS = [
-    "grok-4.5",
-    "glm-5.2",
-    "glm-5.1",
-    "kimi-k3",
-    "kimi-k2.7-code",
-    "kimi-k2.6",
-    "mimo-v2.5",
-    "mimo-v2.5-pro",
-    "minimax-m3",
-    "minimax-m2.7",
-    "minimax-m2.5",
-    "qwen3.7-max",
-    "qwen3.7-plus",
-    "qwen3.6-plus",
-    "deepseek-v4-pro",
-    "deepseek-v4-flash",
-    "hy3",
-]
+MODEL_IDS = list(supported_model_ids())
 
-MODELS = [f"opencode-go/{model_id}" for model_id in MODEL_IDS]
+MODELS = [f"{MODEL_PREFIX}{model_id}" for model_id in MODEL_IDS]
 
 # Options keys
 CONF_MODEL = "model"

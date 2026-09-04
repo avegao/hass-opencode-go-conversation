@@ -10,7 +10,7 @@ import aiohttp
 DEFAULT_BASE_URL = "https://opencode.ai/zen/go/v1"
 # OpenCode Go asks third-party clients to identify themselves with a specific
 # user agent rather than relying on aiohttp's generic default.
-OPENCODE_GO_USER_AGENT = "hass-opencode-go-conversation/0.1.0"
+OPENCODE_GO_USER_AGENT = "hass-opencode-go-conversation/0.2.0"
 
 
 class AbstractAuth(ABC):
@@ -33,7 +33,9 @@ class AbstractAuth(ABC):
         request_kwargs = cast(dict[str, Any], kwargs)
         raw_headers = cast(dict[str, str] | None, request_kwargs.pop("headers", None))
         headers = dict(raw_headers or {})
-        headers.setdefault("Authorization", f"Bearer {await self.async_get_api_key()}")
+        header_names = {name.lower() for name in headers}
+        if "authorization" not in header_names and "x-api-key" not in header_names:
+            headers["Authorization"] = f"Bearer {await self.async_get_api_key()}"
         headers.setdefault("Accept", "application/json")
         headers["User-Agent"] = OPENCODE_GO_USER_AGENT
         return await self._session.request(

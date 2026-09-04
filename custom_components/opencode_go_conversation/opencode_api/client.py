@@ -1,6 +1,4 @@
-"""
-OpenCodeGoClient — high-level async client for the OpenCode Go Responses API.
-"""
+"""High-level async client for the OpenCode Go model protocols."""
 
 from __future__ import annotations
 
@@ -14,11 +12,14 @@ from .errors import (
     OpenCodeGoServerOverloaded,
 )
 from .models import ResponseEvent
+from .payloads import to_anthropic_body, to_chat_body, to_responses_body
 from .requests import OpenCodeGoRequest
-from .sse import sse_iter
+from .routing import MODEL_PREFIX, resolve_model_route
+from .sse import anthropic_sse_iter, responses_sse_iter, sse_iter
 
 RESPONSES_PATH = "/responses"
 CHAT_COMPLETIONS_PATH = "/chat/completions"
+ANTHROPIC_MESSAGES_PATH = "/messages"
 MODELS_PATH = "/models"
 
 _STREAM_HEADERS = {
@@ -52,11 +53,19 @@ class OpenCodeGoClient:
 
             payload = await resp.json()
             models = payload.get("data", []) if isinstance(payload, dict) else []
-            return [
-                f"opencode-go/{item['id']}"
-                for item in models
-                if isinstance(item, dict) and item.get("id")
-            ]
+            result: list[str] = []
+            for item in models:
+                if not isinstance(item, dict) or not item.get("id"):
+                    continue
+                try:
+                    route = resolve_model_route(str(item["id"]))
+                except OpenCodeGoError:
+                    # The catalog can contain models that are not in the
+                    # documented endpoint table yet.  Do not expose a model
+                    # that this client cannot serialise and stream safely.
+                    continue
+                result.append(f"{MODEL_PREFIX}{route.model_id}")
+            return result
         finally:
             resp.release()
 
@@ -68,14 +77,25 @@ class OpenCodeGoClient:
                 "OpenCode Go streaming requests require a stable session_id"
             )
 
+        route = resolve_model_route(request.model)
         headers = dict(_STREAM_HEADERS)
         headers["x-opencode-session"] = session_id
+        if route.protocol == "anthropic":
+            headers["x-api-key"] = await self._auth.async_get_api_key()
+            headers["anthropic-version"] = "2023-06-01"
+
+        if route.protocol == "responses":
+            body = to_responses_body(request)
+        elif route.protocol == "anthropic":
+            body = to_anthropic_body(request)
+        else:
+            body = to_chat_body(request)
 
         resp = await self._auth.request(
             "post",
-            CHAT_COMPLETIONS_PATH,
+            route.path,
             headers=headers,
-            json=request.to_body(),
+            json=body,
         )
         try:
             if resp.status == 401:
@@ -91,7 +111,13 @@ class OpenCodeGoClient:
             if resp.status >= 400:
                 raise OpenCodeGoApiError(resp.status, await resp.text())
 
-            async for event in sse_iter(resp):
+            if route.protocol == "responses":
+                event_stream = responses_sse_iter(resp)
+            elif route.protocol == "anthropic":
+                event_stream = anthropic_sse_iter(resp)
+            else:
+                event_stream = sse_iter(resp)
+            async for event in event_stream:
                 yield event
         finally:
             resp.release()

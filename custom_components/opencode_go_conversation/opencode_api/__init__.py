@@ -1,11 +1,15 @@
-"""
-opencode_api — Python client for the OpenCode Go Responses API.
-"""
+"""Python client for the OpenCode Go model protocols."""
 
 from __future__ import annotations
 
 from .auth import OPENCODE_GO_USER_AGENT, AbstractAuth, OpenCodeGoAuth
-from .client import MODELS_PATH, RESPONSES_PATH, OpenCodeGoClient
+from .client import (
+    ANTHROPIC_MESSAGES_PATH,
+    CHAT_COMPLETIONS_PATH,
+    MODELS_PATH,
+    RESPONSES_PATH,
+    OpenCodeGoClient,
+)
 from .errors import (
     OpenCodeGoApiError,
     OpenCodeGoContextWindowExceeded,
@@ -31,13 +35,20 @@ from .models import (
     ResponseEvent,
 )
 from .requests import OpenCodeGoRequest
+from .routing import MODEL_PREFIX, ModelRoute, resolve_model_route, supported_model_ids
 
 __all__ = [
     "AbstractAuth",
     "OpenCodeGoAuth",
     "OPENCODE_GO_USER_AGENT",
     "MODELS_PATH",
+    "CHAT_COMPLETIONS_PATH",
+    "ANTHROPIC_MESSAGES_PATH",
     "RESPONSES_PATH",
+    "MODEL_PREFIX",
+    "ModelRoute",
+    "resolve_model_route",
+    "supported_model_ids",
     "OpenCodeGoClient",
     "OpenCodeGoError",
     "OpenCodeGoApiError",

@@ -26,5 +26,11 @@ Una integración personalizada de [Home Assistant](https://www.home-assistant.io
 - Las peticiones de generación identifican la integración con un `User-Agent`
   explícito y envían un valor estable de `x-opencode-session` derivado del ID de
   conversación de Home Assistant, como exige OpenCode Go.
+- El cliente mantiene en un único registro la ruta de cada modelo: Responses usa
+  `/responses`, los modelos compatibles con OpenAI usan `/chat/completions` y los
+  compatibles con Anthropic usan `/messages`. El prefijo de Home Assistant se
+  elimina antes de enviar la petición.
+- Si el catálogo incluye un modelo sin ruta documentada, se oculta hasta añadir
+  su entrada al registro para no generar peticiones inválidas.
 - No hay tráfico en segundo plano ni bucles automáticos de reintento; los turnos
   adicionales por llamadas a herramientas están limitados a 10 por interacción.

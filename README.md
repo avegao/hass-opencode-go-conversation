@@ -47,6 +47,12 @@ If you need to change the key later, open the integration menu and use **Reconfi
 
 - This integration uses OpenCode Go's API-key authenticated API.
 - Models are fetched from the OpenCode Go catalog and prefixed with `opencode-go/`.
+- The client keeps the endpoint mapping in one registry: Responses models use
+  `/responses`, OpenAI-compatible models use `/chat/completions`, and Anthropic
+  models use `/messages`. The Home Assistant prefix is removed before sending
+  the wire request.
+- Catalog entries without a documented endpoint mapping are hidden until the
+  registry is updated, preventing malformed requests when OpenCode adds a model.
 - Generation requests identify this integration with an explicit user agent and send
   a stable `x-opencode-session` value derived from the Home Assistant conversation
   ID, as required by OpenCode Go.

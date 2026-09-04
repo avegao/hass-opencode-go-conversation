@@ -1,4 +1,4 @@
-"""Request model for the OpenCode Go Chat Completions API."""
+"""Common request model used by the OpenCode Go protocol adapters."""
 
 from __future__ import annotations
 
@@ -8,23 +8,18 @@ from typing import Any
 
 @dataclass
 class OpenCodeGoRequest:
-    """Typed request for the OpenCode Go ``/chat/completions`` endpoint."""
+    """Typed request before it is serialised for a model's API protocol."""
 
     model: str
     messages: list[dict[str, Any]]
     reasoning_effort: str = "medium"
     tools: list[dict[str, Any]] = field(default_factory=list)
     session_id: str | None = None
+    input_items: list[dict[str, Any]] | None = None
+    instructions: str = ""
 
     def to_body(self) -> dict[str, Any]:
-        """Serialise to the JSON body expected by the OpenCode Go endpoint."""
-        body: dict[str, Any] = {
-            "model": self.model,
-            "stream": True,
-            "messages": self.messages,
-        }
-        if self.tools:
-            body["tools"] = self.tools
-        if self.reasoning_effort:
-            body["reasoning_effort"] = self.reasoning_effort
-        return body
+        """Serialise using the OpenAI-compatible chat shape."""
+        from .payloads import to_chat_body
+
+        return to_chat_body(self)
