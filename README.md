@@ -10,6 +10,7 @@ A [Home Assistant](https://www.home-assistant.io/) custom integration that bring
 - Streaming responses
 - Multi-turn conversations with chat history
 - Model selector based on OpenCode Go models
+- OpenCode Go-compatible client identification and conversation session headers
 - HACS-compatible repository layout
 
 ## Requirements
@@ -44,5 +45,10 @@ If you need to change the key later, open the integration menu and use **Reconfi
 
 ## Notes
 
-- This integration uses the OpenCode Go responses endpoint with API-key auth.
+- This integration uses OpenCode Go's API-key authenticated API.
 - Models are fetched from the OpenCode Go catalog and prefixed with `opencode-go/`.
+- Generation requests identify this integration with an explicit user agent and send
+  a stable `x-opencode-session` value derived from the Home Assistant conversation
+  ID, as required by OpenCode Go.
+- There is no background traffic or automatic retry loop; tool-call follow-up turns
+  are bounded to 10 per interaction.

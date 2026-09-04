@@ -8,6 +8,9 @@ from typing import Any, cast
 import aiohttp
 
 DEFAULT_BASE_URL = "https://opencode.ai/zen/go/v1"
+# OpenCode Go asks third-party clients to identify themselves with a specific
+# user agent rather than relying on aiohttp's generic default.
+OPENCODE_GO_USER_AGENT = "hass-opencode-go-conversation/0.1.0"
 
 
 class AbstractAuth(ABC):
@@ -32,6 +35,7 @@ class AbstractAuth(ABC):
         headers = dict(raw_headers or {})
         headers.setdefault("Authorization", f"Bearer {await self.async_get_api_key()}")
         headers.setdefault("Accept", "application/json")
+        headers["User-Agent"] = OPENCODE_GO_USER_AGENT
         return await self._session.request(
             method,
             f"{self._base_url}{path}",

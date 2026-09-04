@@ -25,7 +25,7 @@ from .const import (
     RECOMMENDED_REASONING_SUMMARY,
     RECOMMENDED_TEXT_VERBOSITY,
 )
-from .conversation import async_run_chat_log
+from .conversation import MAX_TOOL_ITERATIONS, async_run_chat_log
 from .opencode_api import OpenCodeGoAuth, OpenCodeGoClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -107,7 +107,7 @@ class OpenCodeGoAITaskEntity(ai_task.AITaskEntity):
                 CONF_TEXT_VERBOSITY, RECOMMENDED_TEXT_VERBOSITY
             ),
             instructions_suffix=_format_structure_instruction(task),
-            max_iterations=100,
+            max_iterations=MAX_TOOL_ITERATIONS,
         )
 
         if not isinstance(chat_log.content[-1], conversation.AssistantContent):

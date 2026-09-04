@@ -220,7 +220,21 @@ async def async_run_chat_log(
             else instructions_suffix
         )
 
-    for _iteration in range(max_iterations):
+    # OpenCode Go uses this value for prompt-cache affinity.  Home Assistant
+    # keeps ``conversation_id`` stable for the lifetime of a conversation.  Do
+    # not send a made-up per-request value if a custom ChatLog violates that
+    # contract: a missing stable ID would defeat the provider's cache routing.
+    conversation_id = getattr(chat_log, "conversation_id", None)
+    if not isinstance(conversation_id, str) or not conversation_id.strip():
+        raise HomeAssistantError(
+            "OpenCode Go requires a stable Home Assistant conversation ID"
+        )
+    session_id = conversation_id.strip()
+
+    # Keep every caller (including future platforms) within the same bounded
+    # provider-turn budget.  This prevents an accidental tool loop from
+    # generating an unbounded burst of OpenCode Go traffic.
+    for _iteration in range(min(max_iterations, MAX_TOOL_ITERATIONS)):
         messages = build_chat_messages(chat_log, system_prompt=instructions)
         last_content = chat_log.content[-1]
         if isinstance(last_content, UserContent) and last_content.attachments:
@@ -243,6 +257,7 @@ async def async_run_chat_log(
             messages=messages,
             tools=tools,
             reasoning_effort=reasoning_effort,
+            session_id=session_id,
         )
 
         try:

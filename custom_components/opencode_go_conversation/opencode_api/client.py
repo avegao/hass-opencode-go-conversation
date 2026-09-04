@@ -9,6 +9,7 @@ from typing import AsyncIterator
 from .auth import AbstractAuth
 from .errors import (
     OpenCodeGoApiError,
+    OpenCodeGoError,
     OpenCodeGoRateLimited,
     OpenCodeGoServerOverloaded,
 )
@@ -61,10 +62,19 @@ class OpenCodeGoClient:
 
     async def stream(self, request: OpenCodeGoRequest) -> AsyncIterator[ResponseEvent]:
         """Submit *request* and stream back typed ``ResponseEvent`` objects."""
+        session_id = request.session_id
+        if not session_id:
+            raise OpenCodeGoError(
+                "OpenCode Go streaming requests require a stable session_id"
+            )
+
+        headers = dict(_STREAM_HEADERS)
+        headers["x-opencode-session"] = session_id
+
         resp = await self._auth.request(
             "post",
             CHAT_COMPLETIONS_PATH,
-            headers=_STREAM_HEADERS,
+            headers=headers,
             json=request.to_body(),
         )
         try:

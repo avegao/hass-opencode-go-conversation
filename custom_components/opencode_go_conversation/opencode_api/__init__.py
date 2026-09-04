@@ -4,7 +4,7 @@ opencode_api — Python client for the OpenCode Go Responses API.
 
 from __future__ import annotations
 
-from .auth import AbstractAuth, OpenCodeGoAuth
+from .auth import OPENCODE_GO_USER_AGENT, AbstractAuth, OpenCodeGoAuth
 from .client import MODELS_PATH, RESPONSES_PATH, OpenCodeGoClient
 from .errors import (
     OpenCodeGoApiError,
@@ -35,6 +35,7 @@ from .requests import OpenCodeGoRequest
 __all__ = [
     "AbstractAuth",
     "OpenCodeGoAuth",
+    "OPENCODE_GO_USER_AGENT",
     "MODELS_PATH",
     "RESPONSES_PATH",
     "OpenCodeGoClient",

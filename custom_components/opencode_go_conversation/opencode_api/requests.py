@@ -14,6 +14,7 @@ class OpenCodeGoRequest:
     messages: list[dict[str, Any]]
     reasoning_effort: str = "medium"
     tools: list[dict[str, Any]] = field(default_factory=list)
+    session_id: str | None = None
 
     def to_body(self) -> dict[str, Any]:
         """Serialise to the JSON body expected by the OpenCode Go endpoint."""

@@ -15,10 +15,12 @@ from homeassistant.components.conversation import (
     ToolResultContent,
     UserContent,
 )
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
 import pytest
 
 from custom_components.opencode_go_conversation.conversation import (
+    MAX_TOOL_ITERATIONS,
     _events_to_deltas,
     async_run_chat_log,
 )
@@ -146,17 +148,17 @@ async def test_events_to_deltas_emits_text_and_tool_calls():
     tool_call_delta = deltas[2]
     tool_calls = cast(Any, tool_call_delta["tool_calls"])
     assert tool_calls[0].tool_name == "turn_on"
-    assert tool_calls[0].tool_args == {
-        "entity_id": "light.kitchen"
-    }
+    assert tool_calls[0].tool_args == {"entity_id": "light.kitchen"}
 
 
 @pytest.mark.asyncio
 async def test_async_run_chat_log_appends_final_assistant_content():
     chat_log = make_chat_log([UserContent(content="Hello")])
+    requests: list[OpenCodeGoRequest] = []
 
     class FakeClient:
         async def stream(self, request):
+            requests.append(request)
             yield OutputTextDelta(delta="Result text", content_index=0)
 
     await async_run_chat_log(
@@ -171,6 +173,53 @@ async def test_async_run_chat_log_appends_final_assistant_content():
 
     assert isinstance(chat_log.content[-1], AssistantContent)
     assert chat_log.content[-1].content == "Result text"
+    assert requests[0].session_id == chat_log.conversation_id
+
+
+@pytest.mark.asyncio
+async def test_async_run_chat_log_rejects_missing_conversation_id():
+    chat_log = make_chat_log([UserContent(content="Hello")])
+    chat_log.conversation_id = ""
+
+    class FakeClient:
+        async def stream(self, request):
+            raise AssertionError("provider must not receive a request")
+            yield
+
+    with pytest.raises(HomeAssistantError, match="stable.*conversation ID"):
+        await async_run_chat_log(
+            chat_log=chat_log,
+            client=cast(OpenCodeGoClient, FakeClient()),
+            model="opencode-go/kimi-k3",
+            entity_id="conversation.opencode_go_conversation",
+            reasoning_effort="medium",
+            reasoning_summary="off",
+            text_verbosity="medium",
+        )
+
+
+@pytest.mark.asyncio
+async def test_async_run_chat_log_caps_tool_iterations():
+    chat_log = make_chat_log([UserContent(content="Hello")], unresponded=True)
+    requests: list[OpenCodeGoRequest] = []
+
+    class FakeClient:
+        async def stream(self, request):
+            requests.append(request)
+            yield OutputTextDelta(delta="Result text", content_index=0)
+
+    await async_run_chat_log(
+        chat_log=chat_log,
+        client=cast(OpenCodeGoClient, FakeClient()),
+        model="opencode-go/kimi-k3",
+        entity_id="conversation.opencode_go_conversation",
+        reasoning_effort="medium",
+        reasoning_summary="off",
+        text_verbosity="medium",
+        max_iterations=100,
+    )
+
+    assert len(requests) == MAX_TOOL_ITERATIONS
 
 
 @pytest.mark.asyncio
