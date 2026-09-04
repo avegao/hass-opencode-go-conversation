@@ -12,6 +12,8 @@
   "documentation": "https://github.com/avegao/hass-opencode-go-conversation",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/avegao/hass-opencode-go-conversation/issues",
-  "requirements": [],
+  "requirements": [
+    "voluptuous-openapi==0.4.1"
+  ],
   "version": "0.1.0"
 }

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
+from types import ModuleType
 from typing import cast
+from unittest.mock import MagicMock
 
 from homeassistant.components.conversation import AssistantContent, ChatLog
 from homeassistant.core import HomeAssistant
@@ -101,3 +104,101 @@ def test_build_input_items_preserves_assistant_text_tool_calls_and_native() -> N
             "text": "Need to call the Home Assistant tool first.",
         }
     ]
+
+
+def test_format_tool_uses_probatio_when_voluptuous_openapi_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Use Home Assistant's 2026.9 schema converter when available."""
+    import voluptuous as vol
+
+    import custom_components.opencode_go_conversation.transform as transform
+
+    calls: list[tuple[object, object]] = []
+
+    def fake_to_openapi(
+        schema: object, *, custom_serializer: object = None
+    ) -> dict[str, object]:
+        calls.append((schema, custom_serializer))
+        return {"type": "object"}
+
+    probatio = ModuleType("probatio")
+    setattr(probatio, "to_openapi", fake_to_openapi)
+    monkeypatch.setitem(sys.modules, "probatio", probatio)
+    monkeypatch.setitem(sys.modules, "voluptuous_openapi", None)
+
+    def serializer(schema: object) -> dict[str, str]:
+        return {"type": "string"}
+
+    tool = MagicMock(spec=llm.Tool)
+    tool.name = "ping"
+    tool.parameters = vol.Schema({})
+
+    result = transform.format_tool(tool, custom_serializer=serializer)
+
+    assert result["parameters"] == {"type": "object"}
+    assert calls == [(tool.parameters, serializer)]
+
+
+def test_format_tool_falls_back_to_legacy_converter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep supporting Home Assistant versions without probatio."""
+    import voluptuous as vol
+
+    import custom_components.opencode_go_conversation.transform as transform
+
+    calls: list[tuple[object, object]] = []
+
+    def fake_convert(
+        schema: object, *, custom_serializer: object = None
+    ) -> dict[str, object]:
+        calls.append((schema, custom_serializer))
+        return {"type": "object"}
+
+    legacy_converter = ModuleType("voluptuous_openapi")
+    setattr(legacy_converter, "convert", fake_convert)
+    monkeypatch.setitem(sys.modules, "voluptuous_openapi", legacy_converter)
+
+    def missing_probatio(name: str) -> ModuleType:
+        raise ModuleNotFoundError("No module named 'probatio'", name="probatio")
+
+    monkeypatch.setattr(transform, "import_module", missing_probatio)
+
+    def serializer(schema: object) -> dict[str, str]:
+        return {"type": "string"}
+
+    tool = MagicMock(spec=llm.Tool)
+    tool.name = "ping"
+    tool.parameters = vol.Schema({})
+
+    result = transform.format_tool(tool, custom_serializer=serializer)
+
+    assert result["parameters"] == {"type": "object"}
+    assert calls == [(tool.parameters, serializer)]
+
+
+def test_format_tool_reports_internal_probatio_import_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not hide an import failure from inside probatio."""
+    import custom_components.opencode_go_conversation.transform as transform
+
+    def broken_probatio(name: str) -> ModuleType:
+        raise ModuleNotFoundError(
+            "No module named 'probatio.dependencies'", name="probatio.dependencies"
+        )
+
+    monkeypatch.setattr(transform, "import_module", broken_probatio)
+
+    tool = MagicMock(spec=llm.Tool)
+    tool.name = "ping"
+    tool.parameters = {}
+
+    with pytest.raises(
+        HomeAssistantError,
+        match="Failed to import Home Assistant's probatio schema converter",
+    ) as exc_info:
+        transform.format_tool(tool)
+
+    assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)

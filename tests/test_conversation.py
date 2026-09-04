@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import json
+from types import SimpleNamespace
+from typing import Any, cast
+from unittest.mock import MagicMock
 
 from homeassistant.components.conversation import (
     AssistantContent,
+    AssistantContentDeltaDict,
     SystemContent,
     ToolResultContent,
     UserContent,
 )
+from homeassistant.helpers import llm
 import pytest
 
 from custom_components.opencode_go_conversation.conversation import (
@@ -20,6 +25,7 @@ from custom_components.opencode_go_conversation.conversation import (
 from custom_components.opencode_go_conversation.opencode_api import (
     FunctionCallAdded,
     FunctionCallArgumentsDone,
+    OpenCodeGoClient,
     OpenCodeGoRequest,
     OutputTextDelta,
 )
@@ -94,7 +100,7 @@ async def test_build_chat_messages_preserves_text_and_tool_calls():
             AssistantContent(
                 agent_id="conversation.opencode_go_conversation",
                 content="Turning on the light.",
-                tool_calls=[tool_call],
+                tool_calls=[cast(Any, tool_call)],
             ),
             ToolResultContent(
                 agent_id="conversation.opencode_go_conversation",
@@ -130,14 +136,19 @@ async def test_events_to_deltas_emits_text_and_tool_calls():
                 arguments='{"entity_id":"light.kitchen"}', item_id="item_1"
             )
 
-    deltas = []
-    async for delta in _events_to_deltas(FakeClient(), request):
+    deltas: list[AssistantContentDeltaDict] = []
+    client = cast(OpenCodeGoClient, FakeClient())
+    async for delta in _events_to_deltas(client, request):
         deltas.append(delta)
 
     assert deltas[0] == {"role": "assistant"}
     assert deltas[1] == {"content": "Hello"}
-    assert deltas[2]["tool_calls"][0].tool_name == "turn_on"
-    assert deltas[2]["tool_calls"][0].tool_args == {"entity_id": "light.kitchen"}
+    tool_call_delta = deltas[2]
+    tool_calls = cast(Any, tool_call_delta["tool_calls"])
+    assert tool_calls[0].tool_name == "turn_on"
+    assert tool_calls[0].tool_args == {
+        "entity_id": "light.kitchen"
+    }
 
 
 @pytest.mark.asyncio
@@ -150,7 +161,7 @@ async def test_async_run_chat_log_appends_final_assistant_content():
 
     await async_run_chat_log(
         chat_log=chat_log,
-        client=FakeClient(),
+        client=cast(OpenCodeGoClient, FakeClient()),
         model="opencode-go/kimi-k3",
         entity_id="conversation.opencode_go_conversation",
         reasoning_effort="medium",
@@ -160,6 +171,70 @@ async def test_async_run_chat_log_appends_final_assistant_content():
 
     assert isinstance(chat_log.content[-1], AssistantContent)
     assert chat_log.content[-1].content == "Result text"
+
+
+@pytest.mark.asyncio
+async def test_async_run_chat_log_passes_custom_serializer_to_tool_formatter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Forward HA's selector serializer to the schema converter."""
+    import custom_components.opencode_go_conversation.conversation as conversation
+
+    def serializer(schema: object) -> dict[str, str]:
+        return {"type": "string"}
+
+    tool = MagicMock(spec=llm.Tool)
+    llm_api = SimpleNamespace(tools=[tool], custom_serializer=serializer, api_prompt="")
+    chat_log = make_chat_log([UserContent(content="Hello")], llm_api=llm_api)
+    calls: list[tuple[object, object]] = []
+
+    def fake_format_tool(tool: object, *, custom_serializer: object) -> dict[str, Any]:
+        calls.append((tool, custom_serializer))
+        return {"type": "function"}
+
+    monkeypatch.setattr(conversation, "format_tool", fake_format_tool)
+
+    class FakeClient:
+        async def stream(self, request):
+            yield OutputTextDelta(delta="Result text", content_index=0)
+
+    await async_run_chat_log(
+        chat_log=chat_log,
+        client=cast(OpenCodeGoClient, FakeClient()),
+        model="opencode-go/kimi-k3",
+        entity_id="conversation.opencode_go_conversation",
+        reasoning_effort="medium",
+        reasoning_summary="off",
+        text_verbosity="medium",
+    )
+
+    assert calls == [(tool, serializer)]
+
+
+@pytest.mark.asyncio
+async def test_async_run_chat_log_without_no_entities_prompt_constant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Support Home Assistant versions without the legacy prompt constant."""
+    monkeypatch.delattr(llm, "NO_ENTITIES_PROMPT", raising=False)
+    chat_log = make_chat_log(
+        [UserContent(content="Hello")],
+        llm_api=SimpleNamespace(tools=[], custom_serializer=None, api_prompt=""),
+    )
+
+    class FakeClient:
+        async def stream(self, request):
+            yield OutputTextDelta(delta="Result text", content_index=0)
+
+    await async_run_chat_log(
+        chat_log=chat_log,
+        client=cast(OpenCodeGoClient, FakeClient()),
+        model="opencode-go/kimi-k3",
+        entity_id="conversation.opencode_go_conversation",
+        reasoning_effort="medium",
+        reasoning_summary="off",
+        text_verbosity="medium",
+    )
 
 
 def test_json_default_date_and_datetime():

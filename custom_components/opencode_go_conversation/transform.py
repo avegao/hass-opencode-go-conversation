@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import date, datetime
+from importlib import import_module
 import json
 from mimetypes import guess_file_type
 from pathlib import Path
@@ -20,7 +22,41 @@ from homeassistant.components.conversation import (
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
-from voluptuous_openapi import convert
+
+
+def _convert_to_openapi(
+    schema: Any,
+    *,
+    custom_serializer: Callable[[Any], Any] | None = None,
+) -> dict[str, Any]:
+    """Convert an HA Voluptuous schema using the available HA converter."""
+    try:
+        probatio = import_module("probatio")
+    except ModuleNotFoundError as err:
+        if err.name != "probatio":
+            raise HomeAssistantError(
+                "Failed to import Home Assistant's probatio schema converter"
+            ) from err
+        probatio = None
+    except ImportError as err:
+        raise HomeAssistantError(
+            "Failed to import Home Assistant's probatio schema converter"
+        ) from err
+
+    if probatio is not None:
+        to_openapi = getattr(probatio, "to_openapi", None)
+        if callable(to_openapi):
+            return to_openapi(schema, custom_serializer=custom_serializer)
+
+    try:
+        from voluptuous_openapi import convert
+    except ImportError as err:
+        raise HomeAssistantError(
+            "Unable to convert the tool schema: neither probatio.to_openapi "
+            "nor voluptuous_openapi is available"
+        ) from err
+
+    return convert(schema, custom_serializer=custom_serializer)
 
 
 def json_default(obj: object) -> str:
@@ -30,13 +66,19 @@ def json_default(obj: object) -> str:
     return str(obj)
 
 
-def format_tool(tool: llm.Tool) -> dict[str, Any]:
+def format_tool(
+    tool: llm.Tool,
+    *,
+    custom_serializer: Callable[[Any], Any] | None = None,
+) -> dict[str, Any]:
     """Format an HA LLM tool as a Responses API function definition."""
     return {
         "type": "function",
         "name": tool.name,
         "description": tool.description or "",
-        "parameters": convert(tool.parameters),
+        "parameters": _convert_to_openapi(
+            tool.parameters, custom_serializer=custom_serializer
+        ),
         "strict": False,
     }
 

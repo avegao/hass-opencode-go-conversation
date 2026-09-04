@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from homeassistant.config_entries import SOURCE_RECONFIGURE
+import pytest
 
 from custom_components.opencode_go_conversation.config_flow import (
     OpenCodeGoConversationConfigFlow,
@@ -26,10 +26,12 @@ async def test_user_step_creates_entry_on_valid_api_key(hass):
     ):
         result = await flow.async_step_user({"api_key": "test_api_key"})
 
+    subentries = list(result["subentries"])
+
     assert result["type"] == "create_entry"
     assert result["title"] == "OpenCode Go"
     assert result["data"]["api_key"] == "test_api_key"
-    assert len(result["subentries"]) == 2
+    assert len(subentries) == 2
 
 
 @pytest.mark.asyncio
@@ -43,8 +45,11 @@ async def test_user_step_shows_error_on_invalid_api_key(hass):
     ):
         result = await flow.async_step_user({"api_key": "bad"})
 
+    errors = result["errors"]
+
     assert result["type"] == "form"
-    assert result["errors"]["base"] == "invalid_auth"
+    assert errors is not None
+    assert errors["base"] == "invalid_auth"
 
 
 @pytest.mark.asyncio
