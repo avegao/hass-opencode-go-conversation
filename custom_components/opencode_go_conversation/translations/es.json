@@ -28,7 +28,9 @@
     "conversation": {
       "abort": {
         "entry_not_loaded": "No se pueden añadir ajustes de conversación mientras la configuración está deshabilitada.",
-        "reconfigure_successful": "Reconfiguración realizada con éxito."
+        "reconfigure_successful": "Reconfiguración realizada con éxito.",
+        "cannot_connect": "No se pudo cargar el catálogo de modelos de OpenCode Go. Inténtalo de nuevo.",
+        "no_models": "No se encontraron modelos compatibles en el catálogo de OpenCode Go."
       },
       "entry_type": "Agente de conversación",
       "initiate_flow": {
@@ -40,11 +42,13 @@
           "data": {
             "llm_hass_api": "Controlar Home Assistant",
             "prompt": "Prompt",
-            "recommended": "Ajustes de modelo recomendados"
+            "recommended": "Ajustes de modelo recomendados",
+            "model": "Modelo"
           },
           "data_description": {
             "prompt": "Indica cómo debe responder el modelo. Puede ser una plantilla.",
-            "llm_hass_api": "Selecciona la API de Home Assistant que se expondrá al modelo."
+            "llm_hass_api": "Selecciona la API de Home Assistant que se expondrá al modelo.",
+            "model": "Modelo que usará este agente. La lista se carga desde tu catálogo de OpenCode Go."
           }
         },
         "advanced": {
@@ -66,7 +70,9 @@
     "ai_task_data": {
       "abort": {
         "entry_not_loaded": "No se pueden añadir ajustes de tarea de IA mientras la configuración está deshabilitada.",
-        "reconfigure_successful": "Reconfiguración realizada con éxito."
+        "reconfigure_successful": "Reconfiguración realizada con éxito.",
+        "cannot_connect": "No se pudo cargar el catálogo de modelos de OpenCode Go. Inténtalo de nuevo.",
+        "no_models": "No se encontraron modelos compatibles en el catálogo de OpenCode Go."
       },
       "entry_type": "Tarea de IA",
       "initiate_flow": {
@@ -76,7 +82,11 @@
       "step": {
         "init": {
           "data": {
-            "recommended": "Ajustes de modelo recomendados"
+            "recommended": "Ajustes de modelo recomendados",
+            "model": "Modelo"
+          },
+          "data_description": {
+            "model": "Modelo que usará esta tarea de IA. La lista se carga desde tu catálogo de OpenCode Go."
           }
         },
         "advanced": {

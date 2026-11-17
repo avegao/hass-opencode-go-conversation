@@ -19,7 +19,6 @@ from .const import (
     CONF_REASONING_EFFORT,
     CONF_REASONING_SUMMARY,
     CONF_TEXT_VERBOSITY,
-    DEFAULT_MODEL,
     DOMAIN,
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_REASONING_SUMMARY,
@@ -75,12 +74,23 @@ class OpenCodeGoAITaskEntity(ai_task.AITaskEntity):
         return self._subentry.data
 
     @property
+    def _model(self) -> str:
+        """Return the configured model or explain how to pick one."""
+        model = self._options.get(CONF_MODEL)
+        if not isinstance(model, str) or not model.strip():
+            raise HomeAssistantError(
+                "No OpenCode Go model is configured. Open the integration "
+                "options and choose a model from the catalog."
+            )
+        return model
+
+    @property
     def device_info(self) -> dict:
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
             "name": "OpenCode Go",
             "manufacturer": "OpenCode",
-            "model": self._options.get(CONF_MODEL, DEFAULT_MODEL),
+            "model": self._options.get(CONF_MODEL) or "Not configured",
         }
 
     async def _async_generate_data(
@@ -95,7 +105,7 @@ class OpenCodeGoAITaskEntity(ai_task.AITaskEntity):
         await async_run_chat_log(
             chat_log=chat_log,
             client=client,
-            model=self._options.get(CONF_MODEL, DEFAULT_MODEL),
+            model=self._model,
             entity_id=self.entity_id,
             reasoning_effort=self._options.get(
                 CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT

@@ -33,9 +33,7 @@ from .const import (
     CONF_REASONING_SUMMARY,
     CONF_RECOMMENDED,
     CONF_TEXT_VERBOSITY,
-    DEFAULT_MODEL,
     DOMAIN,
-    MODELS,
     RECOMMENDED_AI_TASK_OPTIONS,
     RECOMMENDED_CONVERSATION_OPTIONS,
     RECOMMENDED_REASONING_EFFORT,
@@ -61,15 +59,14 @@ async def _async_validate_api_key(hass, api_key: str) -> None:
 
 
 async def _async_fetch_models(hass, api_key: str) -> list[str]:
-    """Fetch model ids from OpenCode Go, falling back to the docs snapshot."""
+    """Fetch the live OpenCode Go catalog.
+
+    There is no offline fallback: offering models from a stale snapshot is how
+    users end up selecting a model their plan no longer includes.
+    """
     session = async_get_clientsession(hass)
     client = OpenCodeGoClient(OpenCodeGoAuth(session, api_key))
-    try:
-        models = await client.list_models()
-    except Exception:
-        _LOGGER.exception("Failed to fetch models from OpenCode Go; using fallback")
-        return MODELS
-    return models or MODELS
+    return await client.list_models(refresh=True)
 
 
 class OpenCodeGoConversationConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -212,6 +209,7 @@ class _BaseOpenCodeGoSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             if user_input[CONF_RECOMMENDED]:
                 data = self._default_data.copy()
+                data[CONF_MODEL] = user_input[CONF_MODEL]
                 if self._supports_prompt_and_apis:
                     data[CONF_PROMPT] = user_input.get(
                         CONF_PROMPT, llm.DEFAULT_INSTRUCTIONS_PROMPT
@@ -222,38 +220,58 @@ class _BaseOpenCodeGoSubentryFlow(ConfigSubentryFlow):
             self._init_data = user_input
             return await self.async_step_advanced()
 
+        try:
+            model_options = await self._async_model_options()
+        except Exception:
+            _LOGGER.exception("Failed to fetch the OpenCode Go model catalog")
+            return self.async_abort(reason="cannot_connect")
+
+        if not model_options:
+            return self.async_abort(reason="no_models")
+
+        # Never preselect a model on a new configuration: the catalog changes
+        # and a hardcoded default eventually stops being part of the plan.
+        model_key: Any = vol.Required(CONF_MODEL)
+        if options.get(CONF_MODEL) in model_options:
+            model_key = vol.Required(
+                CONF_MODEL,
+                description={"suggested_value": options[CONF_MODEL]},
+            )
+
+        step_schema: dict = {
+            model_key: SelectSelector(
+                SelectSelectorConfig(options=list(model_options))
+            ),
+        }
         if self._supports_prompt_and_apis:
             hass_apis: list[SelectOptionDict] = [
                 {"value": api.id, "label": api.name}
                 for api in llm.async_get_apis(self.hass)
             ]
-            step_schema: dict = {
-                vol.Optional(
-                    CONF_PROMPT,
-                    description={
-                        "suggested_value": options.get(
-                            CONF_PROMPT, llm.DEFAULT_INSTRUCTIONS_PROMPT
+            step_schema.update(
+                {
+                    vol.Optional(
+                        CONF_PROMPT,
+                        description={
+                            "suggested_value": options.get(
+                                CONF_PROMPT, llm.DEFAULT_INSTRUCTIONS_PROMPT
+                            )
+                        },
+                    ): TemplateSelector(),
+                    vol.Optional(CONF_LLM_HASS_API): SelectSelector(
+                        SelectSelectorConfig(
+                            options=cast(list[SelectOptionDict] | list[str], hass_apis),
+                            multiple=True,
                         )
-                    },
-                ): TemplateSelector(),
-                vol.Optional(CONF_LLM_HASS_API): SelectSelector(
-                    SelectSelectorConfig(
-                        options=cast(list[SelectOptionDict] | list[str], hass_apis),
-                        multiple=True,
-                    )
-                ),
-                vol.Required(
-                    CONF_RECOMMENDED,
-                    default=options.get(CONF_RECOMMENDED, True),
-                ): bool,
-            }
-        else:
-            step_schema = {
-                vol.Required(
-                    CONF_RECOMMENDED,
-                    default=options.get(CONF_RECOMMENDED, True),
-                ): bool,
-            }
+                    ),
+                }
+            )
+        step_schema[
+            vol.Required(
+                CONF_RECOMMENDED,
+                default=options.get(CONF_RECOMMENDED, True),
+            )
+        ] = bool
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(step_schema))
 
@@ -266,17 +284,10 @@ class _BaseOpenCodeGoSubentryFlow(ConfigSubentryFlow):
             data = {**self._init_data, **user_input}
             return self._finalize_subentry(data)
 
-        model_options = await self._async_model_options()
         return self.async_show_form(
             step_id="advanced",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_MODEL,
-                        default=options.get(CONF_MODEL, DEFAULT_MODEL),
-                    ): SelectSelector(
-                        SelectSelectorConfig(options=list(model_options))
-                    ),
                     vol.Required(
                         CONF_REASONING_EFFORT,
                         default=options.get(
@@ -308,8 +319,12 @@ class _BaseOpenCodeGoSubentryFlow(ConfigSubentryFlow):
         )
 
     def _finalize_subentry(self, data: dict[str, Any]) -> SubentryFlowResult:
-        model = data.get(CONF_MODEL, DEFAULT_MODEL)
-        title = f"OpenCode Go ({model.removeprefix('opencode-go/')})"
+        model = data.get(CONF_MODEL) or ""
+        title = (
+            f"OpenCode Go ({model.removeprefix('opencode-go/')})"
+            if model
+            else "OpenCode Go"
+        )
 
         if self._is_new:
             return self.async_create_entry(title=title, data=data)

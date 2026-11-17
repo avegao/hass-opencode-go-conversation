@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN
+from .const import CONF_API_KEY, DOMAIN
+from .opencode_api import OpenCodeGoAuth, OpenCodeGoClient
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.AI_TASK, Platform.CONVERSATION]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -20,9 +26,21 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up OpenCode Go from a config entry."""
+    api_key = entry.data[CONF_API_KEY]
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "api_key": entry.data["api_key"],
+        "api_key": api_key,
     }
+
+    # Warm the model catalog so the first conversation does not have to fetch
+    # it.  A failure here is not fatal: the client retries on the next request.
+    client = OpenCodeGoClient(OpenCodeGoAuth(async_get_clientsession(hass), api_key))
+    try:
+        await client.refresh_catalog()
+    except Exception:
+        _LOGGER.warning(
+            "Could not refresh the OpenCode Go model catalog during setup",
+            exc_info=True,
+        )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))

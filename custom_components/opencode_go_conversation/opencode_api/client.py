@@ -2,25 +2,41 @@
 
 from __future__ import annotations
 
+import re
 from typing import AsyncIterator
+
+import aiohttp
 
 from .auth import AbstractAuth
 from .errors import (
     OpenCodeGoApiError,
     OpenCodeGoError,
+    OpenCodeGoModelNotInGo,
     OpenCodeGoRateLimited,
     OpenCodeGoServerOverloaded,
 )
 from .models import ResponseEvent
 from .payloads import to_anthropic_body, to_chat_body, to_responses_body
 from .requests import OpenCodeGoRequest
-from .routing import MODEL_PREFIX, resolve_model_route
+from .routing import (
+    MODEL_CATALOG,
+    MODEL_PREFIX,
+    ModelCatalog,
+    ModelRoute,
+    normalize_model_id,
+    resolve_model_route,
+)
 from .sse import anthropic_sse_iter, responses_sse_iter, sse_iter
 
 RESPONSES_PATH = "/responses"
 CHAT_COMPLETIONS_PATH = "/chat/completions"
 ANTHROPIC_MESSAGES_PATH = "/messages"
 MODELS_PATH = "/models"
+
+_MODEL_NOT_IN_GO_RE = re.compile(
+    r"modelnotingo|included in opencode go",
+    re.IGNORECASE,
+)
 
 _STREAM_HEADERS = {
     "Content-Type": "application/json",
@@ -34,40 +50,63 @@ class OpenCodeGoClient:
     def __init__(self, auth: AbstractAuth) -> None:
         self._auth = auth
 
-    async def list_models(self) -> list[str]:
-        """Return the configured Go models as `opencode-go/<id>` strings."""
+    async def refresh_catalog(self) -> ModelCatalog:
+        """Fetch the live model catalog and cache its endpoint routing."""
         resp = await self._auth.request("get", MODELS_PATH)
         try:
-            if resp.status == 401:
-                raise OpenCodeGoApiError(401, "Unauthorized — API key is invalid")
-            if resp.status == 429:
-                retry_after: float | None = None
-                ra = resp.headers.get("Retry-After")
-                if ra and ra.isdigit():
-                    retry_after = float(ra)
-                raise OpenCodeGoRateLimited(await resp.text(), retry_after=retry_after)
-            if resp.status == 503:
-                raise OpenCodeGoServerOverloaded(await resp.text())
-            if resp.status >= 400:
-                raise OpenCodeGoApiError(resp.status, await resp.text())
-
+            await self._raise_for_status(resp)
             payload = await resp.json()
-            models = payload.get("data", []) if isinstance(payload, dict) else []
-            result: list[str] = []
-            for item in models:
-                if not isinstance(item, dict) or not item.get("id"):
-                    continue
-                try:
-                    route = resolve_model_route(str(item["id"]))
-                except OpenCodeGoError:
-                    # The catalog can contain models that are not in the
-                    # documented endpoint table yet.  Do not expose a model
-                    # that this client cannot serialise and stream safely.
-                    continue
-                result.append(f"{MODEL_PREFIX}{route.model_id}")
-            return result
         finally:
             resp.release()
+
+        MODEL_CATALOG.update(payload)
+        return MODEL_CATALOG
+
+    async def list_models(self, *, refresh: bool = False) -> list[str]:
+        """Return the models published by the live OpenCode Go catalog.
+
+        Pass ``refresh=True`` when filling a model picker: a cached catalog may
+        be up to an hour old and can miss models OpenCode just published.
+        """
+        if refresh or not MODEL_CATALOG.is_fresh:
+            await self.refresh_catalog()
+        return [f"{MODEL_PREFIX}{model_id}" for model_id in MODEL_CATALOG.ids]
+
+    async def _async_route(self, model: str) -> ModelRoute:
+        """Return the route for *model*, refreshing the catalog on a miss."""
+        model_id = normalize_model_id(model)
+        route = MODEL_CATALOG.get(model_id)
+        if route is None:
+            await self.refresh_catalog()
+            route = MODEL_CATALOG.get(model_id)
+        if route is None:
+            return resolve_model_route(model)
+        return route
+
+    async def _raise_for_status(self, resp: aiohttp.ClientResponse) -> None:
+        """Translate an unsuccessful HTTP response into a typed error."""
+        if resp.status == 401:
+            raise OpenCodeGoApiError(401, "Unauthorized — API key is invalid")
+        if resp.status == 429:
+            retry_after: float | None = None
+            ra = resp.headers.get("Retry-After")
+            if ra and ra.isdigit():
+                retry_after = float(ra)
+            raise OpenCodeGoRateLimited(await resp.text(), retry_after=retry_after)
+        if resp.status == 503:
+            raise OpenCodeGoServerOverloaded(await resp.text())
+        if resp.status >= 400:
+            message = await resp.text()
+            if _MODEL_NOT_IN_GO_RE.search(message):
+                # The catalog is out of date: drop it so the next picker
+                # refresh shows the models the plan actually includes.
+                MODEL_CATALOG.invalidate()
+                raise OpenCodeGoModelNotInGo(
+                    "The selected model is not included in your OpenCode Go "
+                    "plan anymore. Open the integration options and choose a "
+                    "model from the refreshed list."
+                )
+            raise OpenCodeGoApiError(resp.status, message)
 
     async def stream(self, request: OpenCodeGoRequest) -> AsyncIterator[ResponseEvent]:
         """Submit *request* and stream back typed ``ResponseEvent`` objects."""
@@ -77,7 +116,7 @@ class OpenCodeGoClient:
                 "OpenCode Go streaming requests require a stable session_id"
             )
 
-        route = resolve_model_route(request.model)
+        route = await self._async_route(request.model)
         headers = dict(_STREAM_HEADERS)
         headers["x-opencode-session"] = session_id
         if route.protocol == "anthropic":
@@ -98,18 +137,7 @@ class OpenCodeGoClient:
             json=body,
         )
         try:
-            if resp.status == 401:
-                raise OpenCodeGoApiError(401, "Unauthorized — API key is invalid")
-            if resp.status == 429:
-                retry_after: float | None = None
-                ra = resp.headers.get("Retry-After")
-                if ra and ra.isdigit():
-                    retry_after = float(ra)
-                raise OpenCodeGoRateLimited(await resp.text(), retry_after=retry_after)
-            if resp.status == 503:
-                raise OpenCodeGoServerOverloaded(await resp.text())
-            if resp.status >= 400:
-                raise OpenCodeGoApiError(resp.status, await resp.text())
+            await self._raise_for_status(resp)
 
             if route.protocol == "responses":
                 event_stream = responses_sse_iter(resp)

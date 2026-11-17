@@ -28,7 +28,9 @@
     "conversation": {
       "abort": {
         "entry_not_loaded": "Cannot add conversation settings while the configuration is disabled.",
-        "reconfigure_successful": "Reconfiguration successful."
+        "reconfigure_successful": "Reconfiguration successful.",
+        "cannot_connect": "Could not load the OpenCode Go model catalog. Please try again.",
+        "no_models": "No supported models were found in the OpenCode Go catalog."
       },
       "entry_type": "Conversation agent",
       "initiate_flow": {
@@ -40,11 +42,13 @@
           "data": {
             "llm_hass_api": "Control Home Assistant",
             "prompt": "Prompt",
-            "recommended": "Recommended model settings"
+            "recommended": "Recommended model settings",
+            "model": "Model"
           },
           "data_description": {
             "prompt": "Instruct how the model should respond. This can be a template.",
-            "llm_hass_api": "Select the Home Assistant API to expose to the model."
+            "llm_hass_api": "Select the Home Assistant API to expose to the model.",
+            "model": "Model to use for this agent. The list is loaded from your OpenCode Go catalog."
           }
         },
         "advanced": {
@@ -66,7 +70,9 @@
     "ai_task_data": {
       "abort": {
         "entry_not_loaded": "Cannot add AI task settings while the configuration is disabled.",
-        "reconfigure_successful": "Reconfiguration successful."
+        "reconfigure_successful": "Reconfiguration successful.",
+        "cannot_connect": "Could not load the OpenCode Go model catalog. Please try again.",
+        "no_models": "No supported models were found in the OpenCode Go catalog."
       },
       "entry_type": "AI task",
       "initiate_flow": {
@@ -76,7 +82,11 @@
       "step": {
         "init": {
           "data": {
-            "recommended": "Recommended model settings"
+            "recommended": "Recommended model settings",
+            "model": "Model"
+          },
+          "data_description": {
+            "model": "Model to use for this AI task. The list is loaded from your OpenCode Go catalog."
           }
         },
         "advanced": {

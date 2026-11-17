@@ -32,6 +32,10 @@ class OpenCodeGoUsageNotIncluded(OpenCodeGoError):
     """Feature not included in the current subscription plan — fatal."""
 
 
+class OpenCodeGoModelNotInGo(OpenCodeGoError):
+    """The selected model is not part of the current OpenCode Go plan — fatal."""
+
+
 class OpenCodeGoRateLimited(OpenCodeGoError):
     """Rate limited — retryable after *retry_after* seconds (if provided)."""
 

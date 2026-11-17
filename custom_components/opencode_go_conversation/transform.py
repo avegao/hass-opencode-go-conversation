@@ -208,7 +208,9 @@ def build_chat_messages(
                         "type": "function",
                         "function": {
                             "name": tool_call.tool_name,
-                            "arguments": json.dumps(tool_call.tool_args, default=json_default),
+                            "arguments": json.dumps(
+                                tool_call.tool_args, default=json_default
+                            ),
                         },
                     }
                     for tool_call in content.tool_calls

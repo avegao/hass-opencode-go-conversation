@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from homeassistant.config_entries import SOURCE_RECONFIGURE
+from homeassistant.config_entries import SOURCE_RECONFIGURE, ConfigEntryState
 import pytest
+import voluptuous as vol
 
 from custom_components.opencode_go_conversation.config_flow import (
     OpenCodeGoConversationConfigFlow,
+    OpenCodeGoConversationSubentryFlow,
     _async_fetch_models,
 )
-from custom_components.opencode_go_conversation.const import MODELS
+from custom_components.opencode_go_conversation.const import (
+    CONF_MODEL,
+    RECOMMENDED_AI_TASK_OPTIONS,
+    RECOMMENDED_CONVERSATION_OPTIONS,
+)
 from custom_components.opencode_go_conversation.opencode_api import OpenCodeGoApiError
 
 
@@ -75,7 +82,23 @@ async def test_reconfigure_step_updates_api_key(hass, mock_config_entry):
 
 
 @pytest.mark.asyncio
-async def test_fetch_models_falls_back_to_snapshot_on_failure(hass):
+async def test_fetch_models_uses_the_live_catalog(hass):
+    with (
+        patch(
+            "custom_components.opencode_go_conversation.config_flow.OpenCodeGoClient.list_models",
+            new=AsyncMock(return_value=["opencode-go/deepseek-v4.1-flash"]),
+        ),
+        patch(
+            "custom_components.opencode_go_conversation.config_flow.async_get_clientsession"
+        ),
+    ):
+        models = await _async_fetch_models(hass, "test_api_key")
+
+    assert models == ["opencode-go/deepseek-v4.1-flash"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_models_does_not_fall_back_to_a_stale_snapshot(hass):
     with (
         patch(
             "custom_components.opencode_go_conversation.config_flow.OpenCodeGoClient.list_models",
@@ -84,7 +107,39 @@ async def test_fetch_models_falls_back_to_snapshot_on_failure(hass):
         patch(
             "custom_components.opencode_go_conversation.config_flow.async_get_clientsession"
         ),
+        pytest.raises(Exception, match="boom"),
     ):
-        models = await _async_fetch_models(hass, "test_api_key")
+        await _async_fetch_models(hass, "test_api_key")
 
-    assert models == MODELS
+
+@pytest.mark.asyncio
+async def test_init_step_requires_a_model_without_preselecting_one(hass):
+    flow = OpenCodeGoConversationSubentryFlow()
+    flow.hass = hass
+    flow.options = {}
+    flow._init_data = {}
+
+    with (
+        patch.object(
+            flow,
+            "_get_entry",
+            return_value=SimpleNamespace(state=ConfigEntryState.LOADED),
+        ),
+        patch.object(
+            flow,
+            "_async_model_options",
+            new=AsyncMock(return_value=["opencode-go/deepseek-v4.1-flash"]),
+        ),
+    ):
+        result = await flow.async_step_init()
+
+    data_schema = result["data_schema"]
+    assert data_schema is not None
+    model_key = next(key for key in data_schema.schema if str(key) == "model")
+    assert isinstance(model_key, vol.Marker)
+    assert model_key.default is vol.UNDEFINED
+
+
+def test_recommended_options_do_not_pin_a_model():
+    assert CONF_MODEL not in RECOMMENDED_CONVERSATION_OPTIONS
+    assert CONF_MODEL not in RECOMMENDED_AI_TASK_OPTIONS

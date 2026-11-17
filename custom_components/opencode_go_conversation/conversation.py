@@ -31,7 +31,6 @@ from .const import (
     CONF_REASONING_EFFORT,
     CONF_REASONING_SUMMARY,
     CONF_TEXT_VERBOSITY,
-    DEFAULT_MODEL,
     DOMAIN,
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_REASONING_SUMMARY,
@@ -114,7 +113,7 @@ class OpenCodeGoConversationEntity(
             identifiers={(DOMAIN, subentry.subentry_id)},
             name=subentry.title,
             manufacturer="OpenCode",
-            model=self._options.get(CONF_MODEL, DEFAULT_MODEL),
+            model=self._options.get(CONF_MODEL) or "Not configured",
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
@@ -126,6 +125,17 @@ class OpenCodeGoConversationEntity(
     @property
     def _options(self) -> Any:
         return self._subentry.data
+
+    @property
+    def _model(self) -> str:
+        """Return the configured model or explain how to pick one."""
+        model = self._options.get(CONF_MODEL)
+        if not isinstance(model, str) or not model.strip():
+            raise HomeAssistantError(
+                "No OpenCode Go model is configured. Open the integration "
+                "options and choose a model from the catalog."
+            )
+        return model
 
     @property
     def supported_languages(self) -> list[str] | Literal["*"]:
@@ -160,7 +170,7 @@ class OpenCodeGoConversationEntity(
         await async_run_chat_log(
             chat_log=chat_log,
             client=client,
-            model=self._options.get(CONF_MODEL, DEFAULT_MODEL),
+            model=self._model,
             entity_id=self.entity_id,
             reasoning_effort=self._options.get(
                 CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT

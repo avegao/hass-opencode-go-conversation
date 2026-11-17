@@ -20,6 +20,7 @@ from custom_components.opencode_go_conversation.ai_task import (  # noqa: E402
 )
 from custom_components.opencode_go_conversation.const import (  # noqa: E402
     CONF_API_KEY,
+    CONF_MODEL,
     DOMAIN,
     RECOMMENDED_AI_TASK_OPTIONS,
     RECOMMENDED_CONVERSATION_OPTIONS,
@@ -27,8 +28,30 @@ from custom_components.opencode_go_conversation.const import (  # noqa: E402
 from custom_components.opencode_go_conversation.conversation import (  # noqa: E402
     OpenCodeGoConversationEntity,
 )
+from custom_components.opencode_go_conversation.opencode_api.routing import (  # noqa: E402
+    MODEL_CATALOG,
+    ModelRoute,
+)
 
 ENTRY_ID = "test_entry_id"
+TEST_MODEL = "opencode-go/deepseek-v4.1-flash"
+
+
+@pytest.fixture(autouse=True)
+def model_catalog():
+    """Seed the shared catalog so tests never hit the network by accident."""
+    MODEL_CATALOG.replace(
+        {
+            "deepseek-v4.1-flash": ModelRoute(
+                "deepseek-v4.1-flash", "chat", "/chat/completions"
+            ),
+            "gpt-5.6-luna": ModelRoute("gpt-5.6-luna", "responses", "/responses"),
+            "qwen3.8-max": ModelRoute("qwen3.8-max", "anthropic", "/messages"),
+            "kimi-k3": ModelRoute("kimi-k3", "chat", "/chat/completions"),
+        }
+    )
+    yield
+    MODEL_CATALOG.reset()
 
 
 @pytest.fixture
@@ -46,7 +69,7 @@ def mock_entity(hass, mock_config_entry) -> OpenCodeGoConversationEntity:
     conversation_subentry = SimpleNamespace(
         subentry_id="conversation_subentry_id",
         title="OpenCode Go Conversation",
-        data=RECOMMENDED_CONVERSATION_OPTIONS.copy(),
+        data={CONF_MODEL: TEST_MODEL, **RECOMMENDED_CONVERSATION_OPTIONS},
         subentry_type="conversation",
     )
     entity = OpenCodeGoConversationEntity(
@@ -65,7 +88,7 @@ def mock_ai_task_subentry() -> SimpleNamespace:
     return SimpleNamespace(
         subentry_id="ai_task_subentry_id",
         title="OpenCode Go AI Task",
-        data=RECOMMENDED_AI_TASK_OPTIONS.copy(),
+        data={CONF_MODEL: TEST_MODEL, **RECOMMENDED_AI_TASK_OPTIONS},
         subentry_type="ai_task_data",
     )
 

@@ -13,11 +13,16 @@ from custom_components.opencode_go_conversation.opencode_api import (
     OpenCodeGoAuth,
     OpenCodeGoClient,
     OpenCodeGoError,
+    OpenCodeGoModelNotInGo,
     OpenCodeGoRequest,
 )
 from custom_components.opencode_go_conversation.opencode_api.models import (
     FunctionCallArgumentsDone,
     OutputTextDelta,
+)
+from custom_components.opencode_go_conversation.opencode_api.routing import (
+    MODEL_CATALOG,
+    ModelRoute,
 )
 from custom_components.opencode_go_conversation.opencode_api.sse import (
     anthropic_sse_iter,
@@ -115,7 +120,7 @@ async def test_stream_sends_the_per_conversation_session_header() -> None:
     auth = _FakeAuth()
     client = OpenCodeGoClient(cast(AbstractAuth, auth))
     request = OpenCodeGoRequest(
-        model="opencode-go/deepseek-v4-flash",
+        model="opencode-go/deepseek-v4.1-flash",
         messages=[],
         session_id="ha-conversation-123",
     )
@@ -136,7 +141,7 @@ async def test_stream_rejects_requests_without_a_session_id() -> None:
             event
             async for event in client.stream(
                 OpenCodeGoRequest(
-                    model="opencode-go/deepseek-v4-flash",
+                    model="opencode-go/deepseek-v4.1-flash",
                     messages=[],
                 )
             )
@@ -144,11 +149,11 @@ async def test_stream_rejects_requests_without_a_session_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stream_rejects_models_without_a_documented_route() -> None:
-    auth = _FakeAuth()
+async def test_stream_rejects_models_missing_from_the_catalog() -> None:
+    auth = _CatalogAuth(CATALOG_PAYLOAD)
     client = OpenCodeGoClient(cast(AbstractAuth, auth))
 
-    with pytest.raises(OpenCodeGoError, match="known endpoint mapping"):
+    with pytest.raises(OpenCodeGoModelNotInGo, match="current OpenCode Go catalog"):
         _ = [
             event
             async for event in client.stream(
@@ -161,6 +166,7 @@ async def test_stream_rejects_models_without_a_documented_route() -> None:
         ]
 
     assert auth.path is None
+    assert ("get", "/models") in auth.requests
 
 
 @pytest.mark.asyncio
@@ -168,7 +174,7 @@ async def test_stream_rejects_models_without_a_documented_route() -> None:
     ("model", "path", "protocol"),
     [
         ("opencode-go/gpt-5.6-luna", "/responses", "responses"),
-        ("opencode-go/deepseek-v4-flash", "/chat/completions", "chat"),
+        ("opencode-go/deepseek-v4.1-flash", "/chat/completions", "chat"),
         ("opencode-go/qwen3.8-max", "/messages", "anthropic"),
     ],
 )
@@ -213,26 +219,125 @@ async def test_stream_routes_model_to_documented_protocol(
         assert auth.body["messages"][0]["role"] == "system"
 
 
-@pytest.mark.asyncio
-async def test_list_models_hides_catalog_models_without_a_route() -> None:
-    class CatalogResponse(_FakeResponse):
-        async def json(self) -> dict[str, Any]:
-            return {
-                "data": [
-                    {"id": "deepseek-v4-flash"},
-                    {"id": "not-yet-documented"},
-                ]
-            }
+class _CatalogResponse(_FakeResponse):
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self._payload = payload
 
-    class CatalogAuth(_FakeAuth):
+    async def json(self) -> dict[str, Any]:
+        return self._payload
+
+
+class _CatalogAuth(_FakeAuth):
+    """Serve the model catalog for ``GET /models`` and the fake stream otherwise."""
+
+    def __init__(self, payload: dict[str, Any]) -> None:
+        super().__init__()
+        self.payload = payload
+        self.requests: list[tuple[str, str]] = []
+
+    async def request(self, method: str, path: str, **kwargs: object) -> _FakeResponse:
+        self.requests.append((method, path))
+        if path == "/models":
+            return _CatalogResponse(self.payload)
+        return await super().request(method, path, **kwargs)
+
+
+CATALOG_PAYLOAD: dict[str, Any] = {
+    "data": [
+        {"id": "deepseek-v4.1-flash", "api": {"chat-completions": {}}},
+        {"id": "gpt-6-luna", "api": {"responses": {}}},
+        {"id": "qwen4-max", "api": {"messages": {}}},
+        {"id": "gemini-4-argon", "api": {"generate-content": {}}},
+        {"id": "no-api-metadata"},
+    ]
+}
+
+
+@pytest.mark.asyncio
+async def test_list_models_returns_the_live_catalog_routes() -> None:
+    MODEL_CATALOG.reset()
+    auth = _CatalogAuth(CATALOG_PAYLOAD)
+
+    models = await OpenCodeGoClient(cast(AbstractAuth, auth)).list_models()
+
+    assert models == [
+        "opencode-go/deepseek-v4.1-flash",
+        "opencode-go/gpt-6-luna",
+        "opencode-go/qwen4-max",
+    ]
+    assert MODEL_CATALOG.get("gpt-6-luna") == ModelRoute(
+        "gpt-6-luna", "responses", "/responses"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_routes_a_model_discovered_at_runtime() -> None:
+    MODEL_CATALOG.reset()
+    auth = _CatalogAuth(
+        {
+            "data": [
+                {"id": "brand-new-model", "api": {"chat-completions": {}}},
+            ]
+        }
+    )
+    client = OpenCodeGoClient(cast(AbstractAuth, auth))
+
+    _ = [
+        event
+        async for event in client.stream(
+            OpenCodeGoRequest(
+                model="opencode-go/brand-new-model",
+                messages=[],
+                session_id="conversation-1",
+            )
+        )
+    ]
+
+    assert ("get", "/models") in auth.requests
+    assert auth.path == "/chat/completions"
+    assert auth.body is not None
+    assert auth.body["model"] == "brand-new-model"
+
+
+@pytest.mark.asyncio
+async def test_stream_reports_models_dropped_from_the_plan() -> None:
+    class NotInGoResponse(_FakeResponse):
+        status = 400
+
+        async def text(self) -> str:
+            return (
+                '{"error":{"type":"server_error","message":"Model '
+                "deepseek-v4.1-flash isn't included in OpenCode Go."
+                '"}}'
+            )
+
+    class NotInGoAuth(_FakeAuth):
         async def request(
             self, method: str, path: str, **kwargs: object
-        ) -> CatalogResponse:
-            return CatalogResponse()
+        ) -> NotInGoResponse:
+            return NotInGoResponse()
 
-    models = await OpenCodeGoClient(cast(AbstractAuth, CatalogAuth())).list_models()
+    client = OpenCodeGoClient(cast(AbstractAuth, NotInGoAuth()))
 
-    assert models == ["opencode-go/deepseek-v4-flash"]
+    with pytest.raises(OpenCodeGoModelNotInGo, match="not included"):
+        _ = [
+            event
+            async for event in client.stream(
+                OpenCodeGoRequest(
+                    model="opencode-go/deepseek-v4.1-flash",
+                    messages=[],
+                    session_id="conversation-1",
+                )
+            )
+        ]
+
+    assert MODEL_CATALOG.is_fresh is False
+
+
+@pytest.mark.asyncio
+async def test_catalog_rejects_unexpected_payloads() -> None:
+    with pytest.raises(OpenCodeGoError, match="unexpected model catalog"):
+        MODEL_CATALOG.update({"data": "nope"})
 
 
 class _LinesContent:

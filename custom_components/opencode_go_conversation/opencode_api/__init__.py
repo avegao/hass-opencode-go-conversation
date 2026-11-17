@@ -14,6 +14,7 @@ from .errors import (
     OpenCodeGoApiError,
     OpenCodeGoContextWindowExceeded,
     OpenCodeGoError,
+    OpenCodeGoModelNotInGo,
     OpenCodeGoQuotaExceeded,
     OpenCodeGoRateLimited,
     OpenCodeGoServerOverloaded,
@@ -35,7 +36,13 @@ from .models import (
     ResponseEvent,
 )
 from .requests import OpenCodeGoRequest
-from .routing import MODEL_PREFIX, ModelRoute, resolve_model_route, supported_model_ids
+from .routing import (
+    MODEL_CATALOG,
+    MODEL_PREFIX,
+    ModelCatalog,
+    ModelRoute,
+    resolve_model_route,
+)
 
 __all__ = [
     "AbstractAuth",
@@ -45,15 +52,17 @@ __all__ = [
     "CHAT_COMPLETIONS_PATH",
     "ANTHROPIC_MESSAGES_PATH",
     "RESPONSES_PATH",
+    "MODEL_CATALOG",
     "MODEL_PREFIX",
+    "ModelCatalog",
     "ModelRoute",
     "resolve_model_route",
-    "supported_model_ids",
     "OpenCodeGoClient",
     "OpenCodeGoError",
     "OpenCodeGoApiError",
     "OpenCodeGoContextWindowExceeded",
     "OpenCodeGoQuotaExceeded",
+    "OpenCodeGoModelNotInGo",
     "OpenCodeGoUsageNotIncluded",
     "OpenCodeGoRateLimited",
     "OpenCodeGoServerOverloaded",

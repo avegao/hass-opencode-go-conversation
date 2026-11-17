@@ -3,13 +3,7 @@
 from homeassistant.const import CONF_LLM_HASS_API  # noqa: F401
 from homeassistant.helpers import llm
 
-from .opencode_api.routing import MODEL_PREFIX, supported_model_ids
-
 DOMAIN = "opencode_go_conversation"
-
-MODEL_IDS = list(supported_model_ids())
-
-MODELS = [f"{MODEL_PREFIX}{model_id}" for model_id in MODEL_IDS]
 
 # Options keys
 CONF_MODEL = "model"
@@ -20,17 +14,18 @@ CONF_REASONING_SUMMARY = "reasoning_summary"
 CONF_TEXT_VERBOSITY = "text_verbosity"
 CONF_API_KEY = "api_key"
 
-# Defaults
-DEFAULT_MODEL = "opencode-go/deepseek-v4-flash"
 RECOMMENDED_REASONING_EFFORT = "medium"
 RECOMMENDED_REASONING_SUMMARY = "off"
 RECOMMENDED_TEXT_VERBOSITY = "medium"
 
+# There is deliberately no default model: the catalog changes often and a
+# hardcoded default silently breaks when OpenCode drops that model from its
+# plan.  The user must pick a model from the live catalog while configuring
+# the subentry.
 RECOMMENDED_CONVERSATION_OPTIONS: dict = {
     CONF_RECOMMENDED: True,
     CONF_LLM_HASS_API: [llm.LLM_API_ASSIST],
     CONF_PROMPT: llm.DEFAULT_INSTRUCTIONS_PROMPT,
-    CONF_MODEL: DEFAULT_MODEL,
     CONF_REASONING_EFFORT: RECOMMENDED_REASONING_EFFORT,
     CONF_REASONING_SUMMARY: RECOMMENDED_REASONING_SUMMARY,
     CONF_TEXT_VERBOSITY: RECOMMENDED_TEXT_VERBOSITY,
@@ -38,7 +33,6 @@ RECOMMENDED_CONVERSATION_OPTIONS: dict = {
 
 RECOMMENDED_AI_TASK_OPTIONS: dict = {
     CONF_RECOMMENDED: True,
-    CONF_MODEL: DEFAULT_MODEL,
     CONF_REASONING_EFFORT: RECOMMENDED_REASONING_EFFORT,
     CONF_REASONING_SUMMARY: RECOMMENDED_REASONING_SUMMARY,
     CONF_TEXT_VERBOSITY: RECOMMENDED_TEXT_VERBOSITY,
